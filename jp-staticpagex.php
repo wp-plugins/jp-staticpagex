@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Static Page eXtended
-Version: Beta 1
+Version: Beta 2
 Plugin URI: http://jp.jixor.com/
 Author: Stephen Ingram
 Author URI: http://jp.jixor.com/
@@ -126,9 +126,7 @@ The folder &quot;(Your WordPress root)/wp-content/staticpages/&quot; is not writ
 
 // -- END SETUP TESTS --
 
-switch($action) {
-
-case 'delete':
+if ($action == 'delete') {
 
 ?>
 
@@ -136,26 +134,30 @@ case 'delete':
 <h2>Manage 'JP-Static Page eXtended': Delete Page</h2>
 
 <?php
-if (!unlink('../wp-content/staticpages/'.$delete.'.php')) {
+	if (!unlink('../wp-content/staticpages/'.$delete.'.php')) {
 ?>
+
 <p>
-Unable to delete the static page file for &quot;<?php echo $delete ?>&quot;. <a href="jp-staticpagex.php" title="Continue">Continue</a>
+Unable to delete the static page file for &quot;<?php echo $delete ?>&quot;.
 </p>
+
 <?php
-} else {
+	} else {
 ?>
+
 <p>
-Deleted the static page file for &quot;<?php echo $delete ?>&quot;. <a href="jp-staticpagex.php" title="Continue">Continue</a>
+Deleted the static page file for &quot;<?php echo $delete ?>&quot;.
 </p>
+
 <?php
-}
+	}
 ?>
+
 </div>
+
 <?php
 
-break;
-
-case 'create':
+} elseif ($action == 'create') {
 
 ?>
 
@@ -163,32 +165,30 @@ case 'create':
 <h2>Manage 'JP-Static Page eXtended': Create New Page</h2>
 
 <?php
-if(!$file_handler = fopen('../wp-content/staticpages/'.$create.'.php', 'wb')) {
+	if(!$file_handler = fopen('../wp-content/staticpages/'.$create.'.php', 'wb')) {
 ?>
 
 <p>
-Unable to create the static page file for &quot;<?php echo $create ?>&quot;. <a href="jp-staticpagex.php" title="Continue">Continue</a>
+Unable to create the static page file for &quot;<?php echo $create ?>&quot;.
 </p>
 
 <?php
-} else {
-	fclose($file_handler);
+	} else {
+		fclose($file_handler);
 ?>
 
 <p>
-Created the static page file for &quot;<?php echo $create ?>&quot;. <a href="jp-staticpagex.php" title="Continue">Continue</a>
+Created the static page file for &quot;<?php echo $create ?>&quot;.
 </p>
 
 <?php
-}
+	}
 ?>
 </div>
 
 <?php
 
-break;
-
-default:
+}
 
 ?>
 
@@ -219,7 +219,7 @@ foreach($pages as $page) {
 
 	if (file_exists('../wp-content/staticpages/'.$page->post_name.'.php')) {
 		echo '
-<td><a href="http://jp.jixor.com/wp-admin/templates.php?file=wp-content/staticpages/'.$page->post_name.'.php" class="edit">edit</a></td>
+<td><a href="../../wp-admin/templates.php?file=wp-content/staticpages/'.$page->post_name.'.php" class="edit">edit</a></td>
 <td><a href="?action=delete&amp;delete='.$page->post_name.'" class="delete" onclick="return confirm(\'You are about to delete the static page file for \\\''.$page->post_title.'\\\'\n  \\\'OK\\\' to delete, \\\'Cancel\\\' to stop.\')">delete</a></td>';
 	} else {
 		echo '
@@ -243,13 +243,22 @@ include("admin-footer.php");
 
 }
 
-}
-
 // -- END ADMIN MODE --
 
 // THE FILTER
 function jp_staticpagex($content) {
 	global $post;
+
+	if (preg_match('|<!--#include file="(.*?)" -->|i',$content,$inlineincludes)) {
+		unset($inlineincludes[0]);
+		foreach($inlineincludes as $include) {
+			ob_start();
+			include($include);
+			$includedoutput = ob_get_contents();
+			ob_end_clean();
+			$content = preg_replace('|(<!--#include file="'.$include.'" -->)|i',$includedoutput,$content);
+		}
+	}
 
 	if (file_exists('wp-content/staticpages/'.$post->post_name.'.php')) {
 		include('wp-content/staticpages/'.$post->post_name.'.php');
