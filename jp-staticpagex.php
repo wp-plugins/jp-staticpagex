@@ -122,7 +122,7 @@ function jp_spx_folder()
 
 		if (!file_exists('wp-content/staticpages/')) {
 
-			if(is_writable('wp-content/staticpages/')) {
+			if(is_writable('wp-content/')) {
 				umask(0000);
 				if(!@mkdir('wp-content/staticpages/')) { // tatatee reported problems manipulation files so I'm going to explicitly state widest access to try to avoid this issue.
 
