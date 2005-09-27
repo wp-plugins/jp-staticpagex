@@ -1,11 +1,11 @@
 <?php
 /*
 Plugin Name: Static Page eXtended
-Version: 1.0
+Version: 1.1
 Plugin URI: http://jp.jixor.com/plugins/static-page-extended/
 Author: Stephen Ingram
 Author URI: http://jp.jixor.com/
-Description: Static files may replace static pages. This is done via a filter so don't worry no templates to edit. You may also do inline includes and inline PHP. (Inline PHP is buggy and dissabled by default.) You may turn functionality on/off and decide what level users must be to access various functionality in their authoring. <strong><a href="edit.php?page=jp-staticpagex.php">Manage Static Page eXtended</a> | <a href="options-general.php?page=jp-staticpagex.php">Static Page eXtended Options</a></strong>
+Description: Static files may replace static pages. This is done via a filter so don't worry no templates to edit. Redirect via id, category or title. You may also do inline includes and inline PHP. (Inline PHP is buggy and dissabled by default.) You may turn functionality on/off and decide what level users must be to access various functionality in their authoring. <strong><a href="edit.php?page=jp-staticpagex.php">Manage Static Page eXtended</a> | <a href="options-general.php?page=jp-staticpagex.php">Static Page eXtended Options</a></strong>
 */
 
 /* ************************************************************************
@@ -77,6 +77,7 @@ function JPSPX()
 	// ADD THE FILTER/ACTIONS
 	add_filter('the_content', array(&$this, 'jp_staticpagex'), 1);
 	add_action('admin_menu', array(&$this, 'jp_spx_addmenu'));
+	if ($this->jpspxopt['JPSPX_REDIRECT']) add_action('template_redirect', array(&$this, 'jp_spx_redirect'));
 	
 }
 
@@ -95,6 +96,8 @@ function get_option_jpspx()
 	if (empty($jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL']))	$jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] = 8;
 	if (!array_key_exists('JPSPX_EVAL_PHP',$jpspxopt))		$jpspxopt['JPSPX_EVAL_PHP'] = FALSE;
 	if (empty($jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL']))		$jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] = 8;
+	if (!array_key_exists('JPSPX_REDIRECT',$jpspxopt))		$jpspxopt['JPSPX_REDIRECT'] = TRUE;
+	if (empty($jpspxopt['JPSPX_REDIRECT_USER_LEVEL']))		$jpspxopt['JPSPX_REDIRECT_USER_LEVEL'] = 8;
 
 	$this->jpspxopt = $jpspxopt;
 	return true;
@@ -340,10 +343,15 @@ You don't have to replace entire pages with a static file, you can also do inlin
 <code>&lt;!--#include file=&quot;(path to your file from WordPress root)&quot; --&gt;</code>
 </p>
 
+<p>
+Note on templating/styling:<br />
+On the default template the body of an article (posts and pages) is enclosed within a div with its class set to &quot;entrytext&quot;, you may want to include this in your file to ensure pages are inline with the styling of normal articles.
+</p>
+
 <table width="100%" cellpadding="3" cellspacing="3">
 <thead>
 <tr>
-<th>ID</th><th>Title</th><th colspan="3">Admin</th>
+<th scope="col">ID</th><th scope="col">Title</th><th scope="col">File</th><th scope="col" colspan="2">Admin</th>
 </tr>
 </thead>
 <tbody>
@@ -356,7 +364,7 @@ foreach($pages as $page) {
 
 	echo '
 <tr class="' . $class . '">
-<td>' . $page->ID . '</td><td>' . $page->post_title . '</td>';
+<th scope="row">' . $page->ID . '</th><td>' . $page->post_title . '</td><td>' . $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $page->ID . '.php</td>';
 
 	if (file_exists($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $page->ID . '.php')) {
 		echo '
@@ -410,8 +418,8 @@ function jp_spx_options()
 	if ($user_level >= $this->jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) {
 
 		if ( ($action == 'modifypluginoptions') and (!empty($_POST)) ) {
-			$numopts = array('JPSPX_MODIFY_PLUGIN_OPTIONS', 'JPSPX_REPLACE_CONTENT_USER_LEVEL', 'JPSPX_INLINE_INCLUDES_USER_LEVEL', 'JPSPX_EVAL_PHP_USER_LEVEL');
-			$switchopts = array('JPSPX_REPLACE_CONTENT', 'JPSPX_INLINE_INCLUDES', 'JPSPX_EVAL_PHP');
+			$numopts = array('JPSPX_MODIFY_PLUGIN_OPTIONS', 'JPSPX_REPLACE_CONTENT_USER_LEVEL', 'JPSPX_INLINE_INCLUDES_USER_LEVEL', 'JPSPX_EVAL_PHP_USER_LEVEL', 'JPSPX_REDIRECT_USER_LEVEL');
+			$switchopts = array('JPSPX_REPLACE_CONTENT', 'JPSPX_INLINE_INCLUDES', 'JPSPX_EVAL_PHP', 'JPSPX_REDIRECT');
 			$stringopts = array('JPSPX_REPLACE_CONTENT_FOLDER');
 
 			foreach ($numopts as $key) {
@@ -465,7 +473,7 @@ function jp_spx_options()
 <h2>Manage 'JP-Static Page eXtended': Options</h2>
 
 <p>
-<strong>Note:</strong> To modify content replacment bindings see <a href="edit.php?page=jp-staticpagex.php" title="Modify JPSPX Content Replacment Bindings.">Manage &gt; Static Page eXtended</a>.
+<strong>Note:</strong> To modify content replacement bindings see <a href="edit.php?page=jp-staticpagex.php" title="Modify JPSPX Content Replacment Bindings.">Manage &gt; Static Page eXtended</a>.
 </p>
 
 <form method="post" action="options-general.php?page=jp-staticpagex.php&amp;action=modifypluginoptions" enctype="multipart/form-data" name="JPSPXOPT">
@@ -481,7 +489,29 @@ function jp_spx_options()
 
 		<p><label for="JPSPX_REPLACE_CONTENT_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to modify content replacement options.</label><input type="text" name="JPSPX_REPLACE_CONTENT_USER_LEVEL" id="JPSPX_REPLACE_CONTENT_USER_LEVEL" value="<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] ?>" /></p>
 
-		<p><label for="JPSPX_REPLACE_CONTENT_FOLDER" style="font-weight:bold;display:block;margin-bottom:2px;">Folder where static pages for 'bindings' are stored.</label><input style="width:20em;" type="text" name="JPSPX_REPLACE_CONTENT_FOLDER" id="JPSPX_REPLACE_CONTENT_FOLDER" value="<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] ?>" /></p>
+		<p><label for="JPSPX_REPLACE_CONTENT_FOLDER" style="font-weight:bold;display:block;margin-bottom:2px;">Folder where content replacement files are stored. <small style="font-weight:normal;">Ensure that there is a trailing / to avoid problems.</small></label><input style="width:20em;" type="text" name="JPSPX_REPLACE_CONTENT_FOLDER" id="JPSPX_REPLACE_CONTENT_FOLDER" value="<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] ?>" /></p>
+
+	</fieldset>
+
+	<fieldset class="options" style="margin-top:2em;">
+		<legend>Redirection Options</legend>
+
+		<p>Redirect enables you to make redirects based on article ID, category or title. Category and title will redirect to the most recent match. Great for a plugin site, the plugin page may redirect to the newest release of that plugin without you having to edit the redirect setting!<br />
+		They may use the format, specify only one value:<br />
+		<dl>
+			<dt>Key</dt>
+			<dd>redirect</dd>
+			<dt>Value</dt>
+			<dd>ID:(specity a valid article id)</dd>
+			<dd>CATEGORY:(specify a valid category id)</dd>
+			<dd>TITLE:(specify a valid title)</dd>
+		</dl>
+		This information is entered into the &quot;Custom Fields&quot; section of an article (post or page).
+		</p>
+
+		<p><input type="checkbox" name="JPSPX_REDIRECT" id="JPSPX_REDIRECT"<?php if ($this->jpspxopt['JPSPX_REDIRECT']) echo 'checked'; ?> /><label for="JPSPX_REDIRECT" style="font-weight:bold;margin-left:4px;">Enable redirects functionality.</label></p>
+
+		<p><label for="JPSPX_REDIRECT_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to create working redirects. <small style="font-weight:normal;">User level applied to source not destination.</small></label><input type="text" name="JPSPX_REDIRECT_USER_LEVEL" id="JPSPX_REDIRECT_USER_LEVEL" value="<?php echo $this->jpspxopt['JPSPX_REDIRECT_USER_LEVEL'] ?>" /></p>
 
 	</fieldset>
 
@@ -543,7 +573,7 @@ Your user current level is not high enough to modify plugin options.
 function jp_staticpagex($content) // THE FILTER
 {
 
-	global $post;
+	global $post, $user_level;
 
 	// Get level of the user that created the article, if there is a better way let me know.
 	$articleuserlevel = get_userdata($post->post_author);
@@ -554,6 +584,8 @@ function jp_staticpagex($content) // THE FILTER
 		if (file_exists($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $post->ID . '.php')) {
 			include($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $post->ID . '.php');
 			$content = '<!-- JP-StaticPageX content replacment applied to this article. -->';
+			// if the currently logged in use is high enough give them a direct edit sp link.
+			if ($user_level) $content .= '<p class="postmetadata"><a href="' . get_settings('siteurl') . '/wp-admin/templates.php?file=' . $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $post->ID . '.php" title="Edit this article\'s content replacement file.">Edit CR File</a></p>';
 			return $content;
 		}
 
@@ -604,13 +636,52 @@ function jp_staticpagex($content) // THE FILTER
 
 // ------------------------------------------------------------
 
-function jp_spx_redirect($option) // Redirect the content
+function jp_spx_redirect($option)
 {
 
-	// Either a redirect via id, category or topic.
-	// Still deciding on format, could make it slim by calling the function with a static page file, however that creates a set of problems.
-	// May be able to redirect entierly to a different article and apply correct templating, would have to investigate, don't really want to use
-	//   meta redirects for that.
+	global $wp_query;
+
+	if ( (is_single()) or (is_page()) ) {
+
+		if ( get_userdata($wp_query->post_author) >= $jpspxopt['JPSPX_REDIRECT_USER_LEVEL'] ) {
+
+			$option = get_post_meta($wp_query->post->ID, 'redirect', true);
+
+			if (!empty($option)) {
+
+				if ( preg_match('|^ID:(.*)|',$option,$match) ) {
+
+					$redirect = get_permalink($match[1]);
+
+				} elseif ( preg_match('|^CATEGORY:(.*)|',$option,$match) ) {
+
+					$result = get_posts('numberposts=1&category=' . $match[1]);
+					if ($result) $redirect = get_permalink($result[0]->ID);
+
+				} elseif ( preg_match('|^TITLE:(.*)|',$option,$match) ) {
+
+					global $wpdb;
+
+					$now = current_time('mysql');
+
+					$result = $wpdb->get_results("SELECT DISTINCT * FROM $wpdb->posts
+						WHERE post_date <= '$now' AND post_status = 'publish' AND post_title = '$match[1]'
+						ORDER BY post_date DESC LIMIT 0, 1");
+					if ($result) $redirect = get_permalink($result[0]->ID);
+
+				} else {
+
+					die('Invalid redirect option specified, option must be either &quot;ID&quot;, &quot;CATEGORY&quot; or &quot;TITLE&quot;.');
+
+				}
+
+				if ($redirect) wp_redirect($redirect);
+
+			}
+
+		}
+
+	}
 
 }
 
