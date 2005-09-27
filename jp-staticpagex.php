@@ -236,7 +236,11 @@ function jp_spx_manage()
 
 	chdir('../');
 
-	global $user_level, $action, $create, $delete;
+	global $user_level;
+
+	if ( !empty($_GET['action']) ) $action = $_GET['action'];
+	if ( !empty($_GET['delete']) ) $delete = (int)$_GET['delete'];
+	if ( !empty($_GET['create']) ) $create = (int)$_GET['create'];
 
 	if ($user_level >= $this->jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']) {
 
@@ -399,7 +403,9 @@ function jp_spx_options()
 	// Make cwd the wp root.
 	chdir('../');
 
-	global $user_level, $action;
+	global $user_level;
+
+	if ( !empty($_GET['action']) ) $action = $_GET['action'];
 
 	if ($user_level >= $this->jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) {
 
