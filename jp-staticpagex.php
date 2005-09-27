@@ -1,11 +1,11 @@
 <?php
 /*
 Plugin Name: Static Page eXtended
-Version: Beta 3
+Version: 1.0
 Plugin URI: http://jp.jixor.com/plugins/static-page-extended/
 Author: Stephen Ingram
 Author URI: http://jp.jixor.com/
-Description: External pages may replace static pages. This is done via a filter so don't worry no templates to edit. You may also do inline includes and inline PHP. You may turn functionality on/off and decide what level users must be to access various functionality in their authoring. <strong><a href="/wp-content/plugins/jp-staticpagex.php">Manage Static Page Files and Options</a></strong>
+Description: Static files may replace static pages. This is done via a filter so don't worry no templates to edit. You may also do inline includes and inline PHP. (Inline PHP is buggy and dissabled by default.) You may turn functionality on/off and decide what level users must be to access various functionality in their authoring. <strong><a href="edit.php?page=jp-staticpagex.php">Manage Static Page eXtended</a> | <a href="options-general.php?page=jp-staticpagex.php">Static Page eXtended Options</a></strong>
 */
 
 /* ************************************************************************
@@ -51,209 +51,284 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ************************************************************************ */
 
-// -- BEGIN ADMIN MODE --
+// ISSUES:
 
-if (basename($_SERVER['SCRIPT_FILENAME']) == 'jp-staticpagex.php') {
+// I have tested the plugin a little and have not been able to generate any problems, however I expect there may be a few bugs.
 
-chdir('../../wp-admin/');
+// TO DO:
 
-require_once('admin.php');
-$title = __('Manage \'JP-Static Page eXtended\'');
-$parent_file = 	'plugins.php';
+// Add redirects feature, so if you move/delete a page you can automatically redirect, or show a redirect link.
+//   The problem with this is that it seems that pages are wayyy too reliant on the .htaccess rewrite rules, this
+//   is because if they were more generic it would require better handeling php side. I think they should make such
+//   a change, a massive set of rewrite rules isn't the best system.
+//   That said what about adding redirects if the page still exists?!
+//     Easy to mark a page for redirect, hard to hide that page from the pages navigation without tedious manual
+//     templating work, maybe, requires investigation.
 
-require_once('./admin-header.php');
+// Add page redirects to article with id, most recent article in x ategory, or most recent article with x title.
 
-$jpspxopt = get_option('JPSPX');
-if (!$jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) $jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS'] = 9; // User level of 9 required by default to modify plugin options.
-if (!$jpspxopt['JPSPX_REPLACE_CONTENT']) $jpspxopt['JPSPX_REPLACE_CONTENT'] = TRUE;
-if (!$jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']) $jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] = 9;
-if (!$jpspxopt['JPSPX_INLINE_INCLUDES']) $jpspxopt['JPSPX_INLINE_INCLUDES'] = TRUE;
-if (!$jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL']) $jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] = 9;
-if (!$jpspxopt['JPSPX_EVAL_PHP']) $jpspxopt['JPSPX_EVAL_PHP'] = TRUE;
-if (!$jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL']) $jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] = 9;
+class JPSPX {
 
-// -- BEGIN SETUP TESTS --
+function JPSPX()
+{
 
-if ($user_level >= $jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) {
+	$this->get_option_jpspx();
 
-if ($action == 'modifypluginoptions') {
-	$numopts = array('JPSPX_MODIFY_PLUGIN_OPTIONS', 'JPSPX_REPLACE_CONTENT_USER_LEVEL', 'JPSPX_INLINE_INCLUDES_USER_LEVEL', 'JPSPX_EVAL_PHP_USER_LEVEL');
-	$switchopts = array('JPSPX_REPLACE_CONTENT', 'JPSPX_INLINE_INCLUDES', 'JPSPX_EVAL_PHP');
+	// ADD THE FILTER/ACTIONS
+	add_filter('the_content', array(&$this, 'jp_staticpagex'), 1);
+	add_action('admin_menu', array(&$this, 'jp_spx_addmenu'));
+	
+}
 
-	foreach ($numopts as $key) {
-		if (array_key_exists($key,$_POST)) {
-			if ((is_numeric($_POST[$key])) and ($_POST[$key] < 11) and ($_POST[$key] > -1)) {
-				$jpspxopt[$key] = (int) $_POST[$key];
-			}
-		}
-	}
+// ---------------------------------------------------------
 
-	foreach ($switchopts as $key) {
-		if (array_key_exists($key,$_POST)) {
-			$jpspxopt[$key] = TRUE;
-		} else {
-			$jpspxopt[$key] = FALSE;
-		}
-	}
-
-	update_option('JPSPX',$jpspxopt);
+function get_option_jpspx()
+{
 
 	$jpspxopt = get_option('JPSPX');
 
-	$jpspxoptupdated = TRUE;
+	if (empty($jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']))		$jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS'] = 9; // User level of 9 required by default to modify plugin options.
+	if (!array_key_exists('JPSPX_REPLACE_CONTENT',$jpspxopt))	$jpspxopt['JPSPX_REPLACE_CONTENT'] = TRUE;
+	if (empty($jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']))	$jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] = 8;
+	if (empty($jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER']))		$jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] = 'wp-content/staticpages/';
+	if (!array_key_exists('JPSPX_INLINE_INCLUDES',$jpspxopt))	$jpspxopt['JPSPX_INLINE_INCLUDES'] = TRUE;
+	if (empty($jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL']))	$jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] = 8;
+	if (!array_key_exists('JPSPX_EVAL_PHP',$jpspxopt))		$jpspxopt['JPSPX_EVAL_PHP'] = FALSE;
+	if (empty($jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL']))		$jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] = 8;
+
+	$this->jpspxopt = $jpspxopt;
+	return true;
 
 }
 
+// ------------------------------------------------------------
+
+function jp_spx_addmenu()
+{
+	add_options_page('\'JP-Static Page eXtended\' Options', 'Static Page eXtended', 0, 'jp-staticpagex.php', array(&$this, 'jp_spx_options'));
+	add_management_page('Manage \'JP-Static Page eXtended\'', 'Static Page eXtended', 0, 'jp-staticpagex.php', array(&$this, 'jp_spx_manage'));
 }
 
-if(!file_exists('../wp-content/staticpages/')) {
-	// The required folder 'staticpages' doesn't exist.
-?>
+// ------------------------------------------------------------
+
+function jp_spx_folder()
+{
+
+	global $action;
+
+	$folder = $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'];
+
+	if ($action == 'createdefaultfolder') {
+
+		if (!file_exists('wp-content/staticpages/')) {
+
+			if(is_writable('wp-content/staticpages/')) {
+				umask(0000);
+				if(!@mkdir('wp-content/staticpages/')) { // tatatee reported problems manipulation files so I'm going to explicitly state widest access to try to avoid this issue.
+
+					?>
 
 <div class="wrap">
 <h2>Manage 'JP-Static Page eXtended': Create Folder</h2>
 
 <p>
-The folder &quot;(Your WordPress root)/wp-content/staticpages/&quot; doesn't exist. I will attempt to create it for you...
+I should have been able to create the &quot;(Your WordPress root)/wp-content/staticpages/&quot; folder for you, however an unkonwn error occured.
 </p>
 
-<?php
-	if(is_writable('../wp-content/')) {
-		if(!@mkdir('../wp-content/staticpages/', 0777)) { // tatatee reported problems manipulation files so I'm going to explicitly state widest access to try to avoid this issue.
-?>
+</div>
+					<?php
+					return false;
+				} else {
+
+					?>
+
+<div class="wrap">
+<h2>Manage 'JP-Static Page eXtended': Create Folder</h2>
 
 <p>
-I should have been able to create the &quot;staticpages&quot; folder for you, however an unkonwn error occured.
+I have created the folder &quot;(Your WordPress root)/wp-content/staticpages/&quot; for you. You can now create content replacment pages for use with JP-Static Page eXtended.
 </p>
 
-<?php
+</div>
+					<?php
+
+					$this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] = 'wp-content/staticpages/';
+					update_option('JPSPX',$this->jpspxopt);
+					return true;
+
+				}
+
+			} else {
+
+				?>
+
+<div class="wrap">
+<h2>Manage 'JP-Static Page eXtended': Create Folder</h2>
+
+<p>
+<strong>An error has occured.</strong> The folder &quot;(Your WordPress root)/wp-content/&quot; is not writable so I was not able to create the folder for you. You can either chmod wp-content to 666 or create staticpages manually. If you create it manually ensure you chmod it to 666.
+</p>
+
+</div>
+				<?php
+				return false;
+			}
+
 		} else {
-?>
+
+			?>
+<div class="wrap">
+<h2>Manage 'JP-Static Page eXtended': Create Folder</h2>
 
 <p>
-I have created the folder &quot;staticpages&quot; for you. You can now create pages for use with JP-Static Page eXtended.
+The default folder already existed so I just reset the folder option.
 </p>
 
-<?php
+</div>
+			<?php
+
+			$this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] = 'wp-content/staticpages/';
+			update_option('JPSPX',$this->jpspxopt);
+			return true;
+
 		}
-	} else {
-?>
+	
+	}
+
+	if(!file_exists($folder)) {
+		?>
+
+<div class="wrap">
+<h2>Manage 'JP-Static Page eXtended': Create Folder</h2>
 
 <p>
-<strong>An error has occured.</strong> The folder &quot;(wordpress)/wp-content/&quot; is not writable so I was not able to create the folder for you. You can either chmod wp-content to 666 or create staticpages manually. If you create it manually ensure you chmod it to 666.
+The content replacment folder specified, &quot;<?php echo $folder ?>&quot;, doesn't exist. If you would like me to attempt to create the default folder (&quot;(Your WordPress root)/wp-content/staticpages/&quot;) and reset the folder option for you continue to; <a href="<?php echo $_SERVER['PHP_SELF'] ?>?page=jp-staticpagex.php&amp;action=createdefaultfolder" title="Create default staticpages folder.">Create default staticpages folder</a>.
 </p>
-
-<?php
-	}
-?>
 
 </div>
 
-<?php
-}
+		<?php
+		return false;
 
-if (!is_writable('../wp-content/staticpages/')) {
-?>
+	} elseif ( !is_writable($folder) ) {
+		?>
 
 <div class="wrap">
 <h2>Manage 'JP-Static Page eXtended': Warning</h2>
 
 <p>
-The folder &quot;(Your WordPress root)/wp-content/staticpages/&quot; is not writable, this means you won't be able to create new pages.
+The folder &quot;<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] ?>&quot; is not writable, this means you won't be able to create new static pages.
 </p>
 
-<?php
+</div>
+
+		<?php
+		return false;
+	}
+	return true;
+
 }
 
-// -- END SETUP TESTS --
+// ------------------------------------------------------------
 
-// -- BEGIN ADMIN FUNCTIONS --
+function jp_spx_manage()
+{
 
-if ($user_level >= $jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']) {
+	chdir('../');
 
-if ($action == 'delete') {
+	global $user_level, $action, $create, $delete;
 
-?>
+	if ($user_level >= $this->jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']) {
 
-<div class="wrap">
-<h2>Manage 'JP-Static Page eXtended': Delete Page</h2>
+		if ( !$this->jp_spx_folder() ) return false;
 
-<?php
-	if (!unlink('../wp-content/staticpages/'.$delete.'.php')) {
-?>
+		if ($action == 'delete') {
+
+			?>
+
+<div class="updated">
+<p><strong>Manage 'JP-Static Page eXtended': Delete Page</strong></p>
+
+			<?php
+			if (!@unlink($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $delete . '.php')) {
+				?>
 
 <p>
-Unable to delete the static page file for &quot;<?php echo $delete ?>&quot;.
+Unable to delete the static page file &quot;<?php echo $delete ?>.php&quot;.
 </p>
 
-<?php
-	} else {
-?>
+				<?php
+			} else {
+				?>
 
 <p>
-Deleted the static page file for &quot;<?php echo $delete ?>&quot;.
+Deleted the static page file &quot;<?php echo $delete ?>.php&quot;.
 </p>
 
-<?php
-	}
-?>
+				<?php
+			}
+			?>
 
 </div>
 
-<?php
+			<?php
 
-} elseif ($action == 'create') { // END: DELETE PAGE, BEGIN: CREATE PAGE
+		} elseif ($action == 'create') { // END: DELETE PAGE, BEGIN: CREATE PAGE
 
-?>
+			?>
 
-<div class="wrap">
-<h2>Manage 'JP-Static Page eXtended': Create New Page</h2>
+<div class="updated">
+<p><strong>Manage 'JP-Static Page eXtended': Create New Page</strong></p>
 
-<?php
-	if(!file_exists('../wp-content/staticpages/'.$create.'.php')) {
-		if(!$file_handler = fopen('../wp-content/staticpages/'.$create.'.php', 'wb')) {
+			<?php
+			if(!file_exists($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $create . '.php')) {
+				if(!$file_handler = fopen($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $create . '.php', 'wb')) {
+					?>
+
+<p>
+Unable to create the static page file &quot;<?php echo $create ?>.php&quot;.
+</p>
+
+					<?php
+				} else {
+					fwrite($file_handler,"\n"); // To avoid error when opening for editing (Warning: fread(): Length parameter must be greater than 0. in...)
+					fclose($file_handler);
+					chmod($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $create . '.php', 0666); // re: tatatee problem above.
+					?>
+
+<p>
+Created the static page file &quot;<?php echo $create ?>.php&quot;.
+</p>
+
+					<?php
+				}
+			} else {
 ?>
 
 <p>
-Unable to create the static page file for &quot;<?php echo $create ?>&quot;.
+Unable to create the static page file &quot;<?php echo $create ?>.php&quot; as one already exists.
 </p>
 
-<?php
-		} else {
-			fwrite($file_handler,"\n"); // To avoid error when opening for editing (Warning: fread(): Length parameter must be greater than 0. in...)
-			fclose($file_handler);
-			chmod('../wp-content/staticpages/'.$create.'.php', 0777); // re: tatatee problem above.
-?>
+				<?php
+			}
+			?>
+</div>
 
-<p>
-Created the static page file for &quot;<?php echo $create ?>&quot;.
-</p>
+			<?php
 
-<?php
 		}
-	} else {
-?>
 
-<p>
-Unable to create the static page file for &quot;<?php echo $create ?>&quot; as one already exists.
-</p>
-
-<?php
-	}
-?>
-</div>
-
-<?php
-
-} // END: CREATE PAGE
-
-?>
+		?>
 
 <div class="wrap">
-<h2>Manage 'JP-Static Page eXtended': Bindings</h2>
+<h2>Manage 'JP-Static Page eXtended': Content Replacement Bindings</h2>
 
 <p>
-Remember a static page file will overwrite any content created on that static page.
+<strong>Note:</strong> To modify plugin options see <a href="options-general.php?page=jp-staticpagex.php" title="Modify JPSPX Options">Options &gt; Static Page eXtended</a>.
+</p>
+
+<p>
+Remember a content replacement file will completley replace any content created on it's relevant static page. If you want you can manually create files with post ids and this will work on regular posts also.
 </p>
 
 <p>
@@ -269,78 +344,138 @@ You don't have to replace entire pages with a static file, you can also do inlin
 </thead>
 <tbody>
 
-<?php 
+		<?php 
 $pages = get_pages();
 
 foreach($pages as $page) {
 	$class = ('alternate' == $class) ? '' : 'alternate';
 
 	echo '
-<tr class="'.$class.'">
-<td>'.$page->ID.'</td><td>'.$page->post_title.'</td>';
+<tr class="' . $class . '">
+<td>' . $page->ID . '</td><td>' . $page->post_title . '</td>';
 
-	if (file_exists('../wp-content/staticpages/'.$page->post_name.'.php')) {
+	if (file_exists($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $page->ID . '.php')) {
 		echo '
-<td><a href="../../wp-admin/templates.php?file=wp-content/staticpages/'.$page->post_name.'.php" class="edit">edit</a></td>
-<td><a href="?action=delete&amp;delete='.$page->post_name.'" class="delete" onclick="return confirm(\'You are about to delete the static page file for \\\''.$page->post_title.'\\\'\n  \\\'OK\\\' to delete, \\\'Cancel\\\' to stop.\')">delete</a></td>';
+<td><a href="templates.php?file=' . $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $page->ID . '.php" class="edit">Edit</a></td>
+<td><a href="' . $_SERVER['PHP_SELF'] . '?page=jp-staticpagex.php&amp;action=delete&amp;delete=' . $page->ID . '" class="delete" onclick="return confirm(\'You are about to delete the static page file \\\'' . $page->ID . '.php\\\' for \\\''.$page->post_title.'\\\'\n  \\\'OK\\\' to delete, \\\'Cancel\\\' to stop.\')">Delete</a></td>';
 	} else {
 		echo '
-<td colspan="2"><a href="?action=create&amp;create='.$page->post_name.'" class="edit">create static page x</a></td>';
+<td colspan="2"><a href="' . $_SERVER['PHP_SELF'] . '?page=jp-staticpagex.php&amp;action=create&amp;create=' . $page->ID . '" class="edit">Create Content Replacement File</a></td>';
 	}
 
 	echo '
 </tr>';
 
 }
-?>
+		?>
 
 </tbody>
 </table>
 
 </div>
 
-<?php
-} else {
-?>
+		<?php
+	} else {
+		?>
 
 <div class="wrap">
-<h2>Manage 'JP-Static Page eXtended': Content Replacmant User Level</h2>
+<h2>Manage 'JP-Static Page eXtended': Content Replacemant User Level</h2>
 <p>
 Your user current level is not high enough to access this function.
 </p>
 </div>
 
-<?php
-} // END 'JPSPX_REPLACE_CONTENT_USER_LEVEL' CONTROLLED SECTION
+		<?php
+	} // END 'JPSPX_REPLACE_CONTENT_USER_LEVEL' CONTROLLED SECTION
+	chdir('wp-admin/');
 
-if ($user_level >= $jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) {
-
-if ($jpspxoptupdated) {
-?>
-
-<div class="wrap">
-<h2>Manage 'JP-Static Page eXtended': Options Updated</h2>
-<p>Options were successfully updated.</p>
-</div>
-
-<?php
 }
 
-?>
+// ------------------------------------------------------------
+
+function jp_spx_options()
+{
+
+	// Make cwd the wp root.
+	chdir('../');
+
+	global $user_level, $action;
+
+	if ($user_level >= $this->jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) {
+
+		if ( ($action == 'modifypluginoptions') and (!empty($_POST)) ) {
+			$numopts = array('JPSPX_MODIFY_PLUGIN_OPTIONS', 'JPSPX_REPLACE_CONTENT_USER_LEVEL', 'JPSPX_INLINE_INCLUDES_USER_LEVEL', 'JPSPX_EVAL_PHP_USER_LEVEL');
+			$switchopts = array('JPSPX_REPLACE_CONTENT', 'JPSPX_INLINE_INCLUDES', 'JPSPX_EVAL_PHP');
+			$stringopts = array('JPSPX_REPLACE_CONTENT_FOLDER');
+
+			foreach ($numopts as $key) {
+				if (array_key_exists($key,$_POST)) {
+					if ((is_numeric($_POST[$key])) and ($_POST[$key] < 11) and ($_POST[$key] > -1)) {
+						$jpspxopt[$key] = (int) $_POST[$key];
+					}
+				}
+			}
+
+			foreach ($switchopts as $key) {
+				if (array_key_exists($key,$_POST)) {
+					$jpspxopt[$key] = TRUE;
+				} else {
+					$jpspxopt[$key] = FALSE;
+				}
+			}
+
+			$notallowed =	'·ÈÌÛ˙‡ËÏÚ˘‰ÎÔˆ¸¡…Õ”⁄¿»Ã“ŸƒÀœ÷‹‚ÍÓÙ˚¬ Œ‘€ÒÁ«(){}[]|!@#$%^&:;<>';
+			$allowed =	'aeiouaeiouaeiouaeiouaeiouaeiouaeiouaeiouncc..................';
+
+			foreach ($stringopts as $key) {
+				if (array_key_exists($key,$_POST)) {
+					$jpspxopt[$key] = strtr($_POST[$key], $notallowed, $allowed);
+				}
+			}
+
+			update_option('JPSPX',$jpspxopt);
+
+			$this->jpspxopt = $jpspxopt;
+
+			$jpspxoptupdated = TRUE;
+
+		}
+
+		$this->jp_spx_folder();
+
+		if ($jpspxoptupdated) {
+			?>
+
+<div class="updated">
+<p><strong>Options were successfully updated.</strong></p>
+</div>
+
+			<?php
+		}
+
+		?>
 
 <div class="wrap">
 <h2>Manage 'JP-Static Page eXtended': Options</h2>
 
-<form method="post" action="?action=modifypluginoptions" enctype="multipart/form-data" name="JPSPXOPT">
+<p>
+<strong>Note:</strong> To modify content replacment bindings see <a href="edit.php?page=jp-staticpagex.php" title="Modify JPSPX Content Replacment Bindings.">Manage &gt; Static Page eXtended</a>.
+</p>
 
-	<p><label for="JPSPX_MODIFY_PLUGIN_OPTIONS" style="font-weight:bold;">User level required to modify this plugin's options.</label><br /><input type="text" name="JPSPX_MODIFY_PLUGIN_OPTIONS" id="JPSPX_MODIFY_PLUGIN_OPTIONS" value="<?php echo $jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS'] ?>" /></p>
+<form method="post" action="options-general.php?page=jp-staticpagex.php&amp;action=modifypluginoptions" enctype="multipart/form-data" name="JPSPXOPT">
+
+	<p>Be carefull who you assign these abilities to, all of them enable users to execute php within 'the loop'.</p>
+
+	<p><label for="JPSPX_MODIFY_PLUGIN_OPTIONS" style="font-weight:bold;">User level required to modify this plugin's options.</label><br /><input type="text" name="JPSPX_MODIFY_PLUGIN_OPTIONS" id="JPSPX_MODIFY_PLUGIN_OPTIONS" value="<?php echo $this->jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS'] ?>" /></p>
 
 	<fieldset class="options" style="margin-top:2em;">
-		<legend>Content Replacment Options</legend>
+		<legend>Content Replacement Options</legend>
 
-		<p><input type="checkbox" name="JPSPX_REPLACE_CONTENT" id="JPSPX_REPLACE_CONTENT"<?php if ($jpspxopt['JPSPX_REPLACE_CONTENT']) echo 'checked'; ?> /><label for="JPSPX_REPLACE_CONTENT" style="font-weight:bold;margin-left:4px;">Enable replace content functionality.</label></p>
+		<p><input type="checkbox" name="JPSPX_REPLACE_CONTENT" id="JPSPX_REPLACE_CONTENT"<?php if ($this->jpspxopt['JPSPX_REPLACE_CONTENT']) echo 'checked'; ?> /><label for="JPSPX_REPLACE_CONTENT" style="font-weight:bold;margin-left:4px;">Enable replace content functionality.</label></p>
 
-		<p><label for="JPSPX_REPLACE_CONTENT_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to modify content replacment options.</label><input type="text" name="JPSPX_REPLACE_CONTENT_USER_LEVEL" id="JPSPX_REPLACE_CONTENT_USER_LEVEL" value="<?php echo $jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] ?>" /></p>
+		<p><label for="JPSPX_REPLACE_CONTENT_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to modify content replacement options.</label><input type="text" name="JPSPX_REPLACE_CONTENT_USER_LEVEL" id="JPSPX_REPLACE_CONTENT_USER_LEVEL" value="<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] ?>" /></p>
+
+		<p><label for="JPSPX_REPLACE_CONTENT_FOLDER" style="font-weight:bold;display:block;margin-bottom:2px;">Folder where static pages for 'bindings' are stored.</label><input style="width:20em;" type="text" name="JPSPX_REPLACE_CONTENT_FOLDER" id="JPSPX_REPLACE_CONTENT_FOLDER" value="<?php echo $this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] ?>" /></p>
 
 	</fieldset>
 
@@ -350,9 +485,9 @@ if ($jpspxoptupdated) {
 		<p>Inline includes enables users to write include statments that will attach an external file where they are placed. They may use the syntax:<br />
 		<code>&lt;!--#include file=&quot;path to your file from WordPress root&quot; --&gt;</code></p>
 
-		<p><input type="checkbox" name="JPSPX_INLINE_INCLUDES" id="JPSPX_INLINE_INCLUDES"<?php if ($jpspxopt['JPSPX_INLINE_INCLUDES']) echo 'checked'; ?> /><label for="JPSPX_INLINE_INCLUDES" style="font-weight:bold;margin-left:4px;">Enable inline includes functionality.</label></p>
+		<p><input type="checkbox" name="JPSPX_INLINE_INCLUDES" id="JPSPX_INLINE_INCLUDES"<?php if ($this->jpspxopt['JPSPX_INLINE_INCLUDES']) echo 'checked'; ?> /><label for="JPSPX_INLINE_INCLUDES" style="font-weight:bold;margin-left:4px;">Enable inline includes functionality.</label></p>
 
-		<p><label for="JPSPX_INLINE_INCLUDES_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to create working inline includes.</label><input type="text" name="JPSPX_INLINE_INCLUDES_USER_LEVEL" id="JPSPX_INLINE_INCLUDES_USER_LEVEL" value="<?php echo $jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] ?>" /></p>
+		<p><label for="JPSPX_INLINE_INCLUDES_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to create working inline includes.</label><input type="text" name="JPSPX_INLINE_INCLUDES_USER_LEVEL" id="JPSPX_INLINE_INCLUDES_USER_LEVEL" value="<?php echo $this->jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] ?>" /></p>
 
 	</fieldset>
 
@@ -362,12 +497,14 @@ if ($jpspxoptupdated) {
 		<p>Inline PHP Enables users to put php code directly into their articles. They may use the syntax:<br />
 		<code>&lt;!--PHP<br />
 		(php code here)<br />
-		--&gt;</code><br />
-		Just be carefull who you assign this ability to!</p>
+		--&gt;</code>
+		</p>
 
-		<p><input type="checkbox" name="JPSPX_EVAL_PHP" id="JPSPX_EVAL_PHP"<?php if ($jpspxopt['JPSPX_EVAL_PHP']) echo 'checked'; ?> /><label for="JPSPX_EVAL_PHP" style="font-weight:bold;margin-left:4px;">Enable inline PHP functionality.</label></p>
+		<p>This functionality is not fully implemented, you can do the odd thing but its very buggy, use at own risk.</p>
 
-		<p><label for="JPSPX_EVAL_PHP_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to create working inline PHP.</label><input type="text" name="JPSPX_EVAL_PHP_USER_LEVEL" id="JPSPX_EVAL_PHP_USER_LEVEL" value="<?php echo $jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] ?>" /></p>
+		<p><input type="checkbox" name="JPSPX_EVAL_PHP" id="JPSPX_EVAL_PHP"<?php if ($this->jpspxopt['JPSPX_EVAL_PHP']) echo 'checked'; ?> /><label for="JPSPX_EVAL_PHP" style="font-weight:bold;margin-left:4px;">Enable inline PHP functionality.</label></p>
+
+		<p><label for="JPSPX_EVAL_PHP_USER_LEVEL" style="font-weight:bold;display:block;margin-bottom:2px;">User level required to create working inline PHP.</label><input type="text" name="JPSPX_EVAL_PHP_USER_LEVEL" id="JPSPX_EVAL_PHP_USER_LEVEL" value="<?php echo $this->jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] ?>" /></p>
 
 	</fieldset>
 
@@ -378,43 +515,45 @@ if ($jpspxoptupdated) {
 </div>
 
 <?php
-} // END 'JPSPX_MODIFY_PLUGIN_OPTIONS' CONTROLLED SECTION
+	} else {
+		?>
 
-include("admin-footer.php");
+<div class="wrap">
+<h2>Manage 'JP-Static Page eXtended': Options User Level</h2>
+<p>
+Your user current level is not high enough to modify plugin options.
+</p>
+</div>
+
+		<?php
+	}
+
+	chdir('wp-admin/');
 
 }
 
-// -- END ADMIN MODE --
+// ------------------------------------------------------------
 
-// THE FILTER
-function jp_staticpagex($content) {
+function jp_staticpagex($content) // THE FILTER
+{
 
 	global $post;
-
-	$jpspxopt = get_option('JPSPX');
-	if (!$jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS']) $jpspxopt['JPSPX_MODIFY_PLUGIN_OPTIONS'] = 9; // User level of 9 required by default to modify plugin options.
-	if (!$jpspxopt['JPSPX_REPLACE_CONTENT']) $jpspxopt['JPSPX_REPLACE_CONTENT'] = TRUE;
-	if (!$jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL']) $jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'] = 9;
-	if (!$jpspxopt['JPSPX_INLINE_INCLUDES']) $jpspxopt['JPSPX_INLINE_INCLUDES'] = TRUE;
-	if (!$jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL']) $jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'] = 9;
-	if (!$jpspxopt['JPSPX_EVAL_PHP']) $jpspxopt['JPSPX_EVAL_PHP'] = TRUE;
-	if (!$jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL']) $jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'] = 9;
 
 	// Get level of the user that created the article, if there is a better way let me know.
 	$articleuserlevel = get_userdata($post->post_author);
 	$articleuserlevel = $articleuserlevel->user_level;
 
-	if (($jpspxopt['JPSPX_REPLACE_CONTENT']) and ($articleuserlevel >= $jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'])) {
+	if (($this->jpspxopt['JPSPX_REPLACE_CONTENT']) and ($articleuserlevel >= $this->jpspxopt['JPSPX_REPLACE_CONTENT_USER_LEVEL'])) {
 
-		if (file_exists('wp-content/staticpages/'.$post->post_name.'.php')) {
-			include('wp-content/staticpages/'.$post->post_name.'.php');
+		if (file_exists($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $post->ID . '.php')) {
+			include($this->jpspxopt['JPSPX_REPLACE_CONTENT_FOLDER'] . $post->ID . '.php');
 			$content = '<!-- JP-StaticPageX content replacment applied to this article. -->';
 			return $content;
 		}
 
 	}
 
-	if (($jpspxopt['JPSPX_INLINE_INCLUDES']) and ($articleuserlevel >= $jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'])) {
+	if (($this->jpspxopt['JPSPX_INLINE_INCLUDES']) and ($articleuserlevel >= $this->jpspxopt['JPSPX_INLINE_INCLUDES_USER_LEVEL'])) {
 
 		if (preg_match('|<!--#include file="(.*?)".*-->|i',$content,$inlineincludes)) {
 			unset($inlineincludes[0]);
@@ -429,12 +568,12 @@ function jp_staticpagex($content) {
 
 	}
 
-	if (($jpspxopt['JPSPX_EVAL_PHP']) and ($articleuserlevel >= $jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'])) {
+	if (($this->jpspxopt['JPSPX_EVAL_PHP']) and ($articleuserlevel >= $this->jpspxopt['JPSPX_EVAL_PHP_USER_LEVEL'])) {
 
 	// Your php's output will be placed as if it were there in the first place.
 	// As such most wp filtering will be applied to it. So it will be wrapped in <p></p> and stuff.
-	// There is probally going to be a few big problems with this function, but remember this is a
-	// beta version for a reason.
+	// There is probally going to be a few big problems with this function, but remember this is an
+	// alpha version, if that, for a reason.
 
 		if (preg_match('|(<!--PHP.*?-->)|is',$content,$evalphp)) {
 			unset($evalphp[0]);
@@ -457,7 +596,22 @@ function jp_staticpagex($content) {
 
 }
 
-// ADD THE FILTER
-add_filter('the_content', 'jp_staticpagex',1);
+// ------------------------------------------------------------
+
+function jp_spx_redirect($option) // Redirect the content
+{
+
+	// Either a redirect via id, category or topic.
+	// Still deciding on format, could make it slim by calling the function with a static page file, however that creates a set of problems.
+	// May be able to redirect entierly to a different article and apply correct templating, would have to investigate, don't really want to use
+	//   meta redirects for that.
+
+}
+
+// ------------------------------------------------------------
+
+} // End class definition.
+
+$JPSPX = new JPSPX;
 
 ?>
