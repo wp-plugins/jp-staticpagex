@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name: Static Page eXtended
- * Version: 2
+ * Version: 2.1
  * Plugin URI: http://jp.jixor.com/plugins/static-page-extended
  * Author: Stephen Ingram
  * Author URI: http://jp.jixor.com
